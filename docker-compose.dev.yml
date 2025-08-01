@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   photo-rust-dev:
     build:
@@ -18,7 +16,6 @@ services:
       # Mount source code for hot reloading
       - ./src:/app/src
       - ./Cargo.toml:/app/Cargo.toml
-      - ./Cargo.lock:/app/Cargo.lock
       # Mount for media files
       - ./tmp:/app/tmp
       # Mount for logs

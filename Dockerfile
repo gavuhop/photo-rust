@@ -1,5 +1,5 @@
 # Multi-stage build for Rust media processing service
-FROM rust:1.75-slim-bullseye as builder
+FROM rust:1.88-slim-bullseye as builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
