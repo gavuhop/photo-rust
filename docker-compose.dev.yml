@@ -16,7 +16,9 @@ services:
       - PORT=8081
     volumes:
       # Mount source code for hot reloading
-      - ./internal:/app/internal
+      - ./src:/app/src
+      - ./Cargo.toml:/app/Cargo.toml
+      - ./Cargo.lock:/app/Cargo.lock
       # Mount for media files
       - ./tmp:/app/tmp
       # Mount for logs
@@ -24,9 +26,10 @@ services:
       # Mount for configuration
       - ./config:/app/config:ro
     restart: unless-stopped
+    working_dir: /app
+    command: ["cargo", "run"]
     networks:
       - photo-network
-    command: ["cargo", "run", "--manifest-path", "internal/transcode/Cargo.toml"]
 
 networks:
   photo-network:

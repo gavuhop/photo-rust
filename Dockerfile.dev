@@ -22,13 +22,13 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
 # Copy Cargo files to correct locations
-COPY internal/transcode/Cargo.toml internal/transcode/Cargo.lock internal/transcode/
+COPY Cargo.toml Cargo.lock ./
 
 # Create source directories
-RUN mkdir -p internal/transcode/src
+RUN mkdir -p src
 
 # Copy source code
-COPY internal/transcode/src internal/transcode/src/
+COPY src src/
 
 # Copy run script
 COPY run_rust.sh ./
@@ -52,5 +52,5 @@ ENV RUST_LOG=debug
 ENV RUST_BACKTRACE=1
 ENV PORT=8081
 
-# Default command for development - run from the transcode directory
-CMD ["sh", "-c", "cd internal/transcode && cargo run"] 
+# Default command for development
+CMD ["cargo", "run"] 

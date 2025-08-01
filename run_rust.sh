@@ -14,7 +14,7 @@ NC='\033[0m'
 
 # Configuration
 RUST_PORT=${RUST_PORT:-8081}
-SERVICE_DIR="internal/transcode"
+SERVICE_DIR="."
 BUILD_MODE="dev"
 
 # Function to check prerequisites

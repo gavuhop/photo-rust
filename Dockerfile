@@ -15,21 +15,21 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy Cargo files for dependency caching
-COPY internal/transcode/Cargo.toml internal/transcode/Cargo.lock ./
+COPY Cargo.toml Cargo.lock ./
 
 # Create dummy main.rs files to build dependencies
-RUN mkdir -p internal/transcode/src
-RUN echo "fn main() {}" > internal/transcode/src/main.rs
+RUN mkdir -p src
+RUN echo "fn main() {}" > src/main.rs
 
 # Build dependencies
-RUN cargo build --release --manifest-path internal/transcode/Cargo.toml
+RUN cargo build --release
 
 # Remove dummy files and copy real source code
-RUN rm internal/transcode/src/main.rs
-COPY internal/transcode/src internal/transcode/src/
+RUN rm src/main.rs
+COPY src src/
 
 # Build the application
-RUN cargo build --release --manifest-path internal/transcode/Cargo.toml
+RUN cargo build --release
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -49,7 +49,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN mkdir -p /app/tmp/{media,processing,uploads} /app/logs/rust
 
 # Copy binary from builder stage
-COPY --from=builder /app/internal/transcode/target/release/media-processing-service /app/
+COPY --from=builder /app/target/release/media-processing-service /app/
 
 # Copy run script
 COPY run_rust.sh /app/

@@ -48,7 +48,7 @@ Một service xử lý media (hình ảnh, video, audio) được viết bằng 
 
 ```
 photo-rust/
-├── internal/transcode/          # Main service
+├── src/                         # Main service source code
 │   ├── src/
 │   │   ├── main.rs             # Web server entry point
 │   │   ├── handlers.rs         # HTTP request handlers
@@ -97,7 +97,7 @@ photo-rust/
 
 ### Development (Local)
 ```bash
-cd internal/transcode
+# Build and run from root directory
 cargo run
 ```
 
