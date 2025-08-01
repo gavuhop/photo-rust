@@ -12,19 +12,25 @@ services:
       - RUST_LOG=debug
       - RUST_BACKTRACE=1
       - PORT=8081
+      - CARGO_WATCH=true
+      - WATCH_DELAY=1
     volumes:
       # Mount source code for hot reloading
       - ./src:/app/src
       - ./Cargo.toml:/app/Cargo.toml
+      - ./Cargo.lock:/app/Cargo.lock
       # Mount for media files
       - ./tmp:/app/tmp
       # Mount for logs
       - ./logs:/app/logs
       # Mount for configuration
       - ./config:/app/config:ro
+      # Exclude target directory to avoid conflicts
+      - /app/target
     restart: unless-stopped
     working_dir: /app
-    command: ["cargo", "run"]
+    # Use cargo watch for hot reloading
+    command: ["cargo", "watch", "-x", "run", "--delay", "1"]
     networks:
       - photo-network
 

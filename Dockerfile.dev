@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Install cargo-watch for hot reloading
+RUN cargo install cargo-watch
+
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
@@ -60,5 +63,5 @@ ENV RUST_LOG=debug
 ENV RUST_BACKTRACE=1
 ENV PORT=8081
 
-# Default command for development
-CMD ["cargo", "run"] 
+# Default command for development with hot reload
+CMD ["cargo", "watch", "-x", "run"] 

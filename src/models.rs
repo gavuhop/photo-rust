@@ -209,4 +209,175 @@ pub struct VideoAnalysisResponse {
     pub bitrate: u64,
     pub frames: Option<Vec<String>>, // paths to extracted frames
     pub audio_path: Option<String>,
+}
+
+// New request/response models for the HTTP endpoints
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResizeRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub width: u32,
+    pub height: u32,
+    pub mode: Option<String>, // "fit", "crop", "fill"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RotateRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub angle: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CropRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptimizeRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub quality: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AudioExtractRequest {
+    pub video_path: String,
+    pub audio_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObjectDetectionRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FaceDetectionRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ColorAnalysisRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContentSafetyRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TextExtractionRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SceneClassificationRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityAssessmentRequest {
+    pub image_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnhancementRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub enhancement_type: Option<String>, // "auto", "noise_reduction", "super_resolution", "color_correction"
+    pub parameters: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EffectRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub effect_type: String, // "artistic", "style_transfer", "background_removal"
+    pub parameters: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackgroundRemovalRequest {
+    pub input_path: String,
+    pub output_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StyleTransferRequest {
+    pub input_path: String,
+    pub output_path: String,
+    pub style_path: String,
+    pub intensity: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PanoramaRequest {
+    pub input_paths: Vec<String>,
+    pub output_path: String,
+    pub method: Option<String>, // "auto", "manual"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchRequest {
+    pub input_paths: Vec<String>,
+    pub output_directory: String,
+    pub operation: String, // "resize", "optimize", "convert"
+    pub parameters: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcessingResult {
+    pub success: bool,
+    pub input_path: String,
+    pub output_path: String,
+    pub processing_time: f64,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptimizationResult {
+    pub original_size: u64,
+    pub optimized_size: u64,
+    pub compression_ratio: f32,
+    pub quality_score: f32,
+    pub output_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityAssessment {
+    pub sharpness: f32,
+    pub brightness: f32,
+    pub contrast: f32,
+    pub noise_level: f32,
+    pub overall_score: f32,
+    pub recommendations: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WatermarkResponse {
+    pub success: bool,
+    pub output_path: String,
+    pub processing_time: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AudioMetadata {
+    pub duration: f64,
+    pub sample_rate: u32,
+    pub channels: u8,
+    pub bitrate: u64,
+    pub format: String,
+    pub codec: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<u32>,
+    pub genre: Option<String>,
 } 
