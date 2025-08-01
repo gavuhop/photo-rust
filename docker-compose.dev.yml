@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  photo-rust-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: photo-rust-dev
+    ports:
+      - "8081:8081"
+      - "9000:9000"  # For debugging
+    environment:
+      - RUST_PORT=8081
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - PORT=8081
+    volumes:
+      # Mount source code for hot reloading
+      - ./internal:/app/internal
+      # Mount for media files
+      - ./tmp:/app/tmp
+      # Mount for logs
+      - ./logs:/app/logs
+      # Mount for configuration
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    networks:
+      - photo-network
+    command: ["cargo", "run", "--manifest-path", "internal/transcode/Cargo.toml"]
+
+networks:
+  photo-network:
+    driver: bridge 

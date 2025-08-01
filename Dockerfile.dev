@@ -1,0 +1,56 @@
+# Development Dockerfile for Rust media processing service
+FROM rust:1.75-slim-bullseye
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libclang-dev \
+    clang \
+    cmake \
+    build-essential \
+    ffmpeg \
+    imagemagick \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy Cargo files to correct locations
+COPY internal/transcode/Cargo.toml internal/transcode/Cargo.lock internal/transcode/
+
+# Create source directories
+RUN mkdir -p internal/transcode/src
+
+# Copy source code
+COPY internal/transcode/src internal/transcode/src/
+
+# Copy run script
+COPY run_rust.sh ./
+RUN chmod +x run_rust.sh
+
+# Create necessary directories
+RUN mkdir -p tmp/{media,processing,uploads} logs/rust
+
+# Set ownership
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose ports
+EXPOSE 8081 9000
+
+# Set environment variables
+ENV RUST_PORT=8081
+ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV PORT=8081
+
+# Default command for development - run from the transcode directory
+CMD ["sh", "-c", "cd internal/transcode && cargo run"] 
