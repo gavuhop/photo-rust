@@ -6,7 +6,6 @@ services:
     container_name: photo-rust-dev
     ports:
       - "8081:8081"
-      - "9000:9000"  # For debugging
     environment:
       - RUST_PORT=8081
       - RUST_LOG=debug
@@ -19,12 +18,10 @@ services:
       - ./src:/app/src
       - ./Cargo.toml:/app/Cargo.toml
       - ./Cargo.lock:/app/Cargo.lock
-      # Mount for media files
+      # Mount for temporary files
       - ./tmp:/app/tmp
       # Mount for logs
       - ./logs:/app/logs
-      # Mount for configuration
-      - ./config:/app/config:ro
       # Exclude target directory to avoid conflicts
       - /app/target
     restart: unless-stopped
