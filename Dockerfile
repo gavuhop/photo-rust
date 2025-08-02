@@ -1,47 +1,55 @@
-FROM rust:1.88-slim as builder
-
-# Install basic system dependencies for building
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+# Use the official Rust image as a base
+FROM rust:1.70 as builder
 
 # Set working directory
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy Cargo.toml and Cargo.lock first for better caching
-COPY Cargo.toml Cargo.lock ./
+# Copy the manifests
+COPY Cargo.lock Cargo.toml ./
 
 # Create a dummy main.rs to build dependencies
-RUN mkdir src && echo 'fn main() { println!("Hello World"); }' > src/main.rs
+RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies
 RUN cargo build --release
 
-# Remove dummy files and copy real source code
-RUN rm -rf src
-COPY src/ ./src/
+# Remove the dummy main.rs and copy the real source code
+RUN rm src/main.rs
+COPY src ./src
 
 # Build the application
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+# Runtime stage
+FROM debian:bullseye-slim
 
-# Install basic runtime dependencies
+# Install system dependencies including FFmpeg
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user
+RUN useradd -m -u 1000 app
 
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
-COPY --from=builder /app/target/release/photo-rust .
+# Copy the binary from builder stage
+COPY --from=builder /usr/src/app/target/release/media-processing-service /app/
+
+# Change ownership to the app user
+RUN chown -R app:app /app
+
+# Switch to the app user
+USER app
+
+# Expose the port
+EXPOSE 8081
 
 # Set environment variables
-ENV RUST_PORT=8081
 ENV RUST_LOG=info
-ENV RUST_BACKTRACE=1
 ENV PORT=8081
 
-# Default command
-CMD ["./photo-rust"] 
+# Run the binary
+CMD ["./media-processing-service"] 

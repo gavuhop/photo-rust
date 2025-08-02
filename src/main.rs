@@ -1,3 +1,53 @@
-fn main() {
-    println!("Hello World");
+mod handlers;
+mod services;
+mod models;
+mod utils;
+
+use actix_web::{web, App, HttpServer};
+use log::info;
+use services::video_processor::VideoProcessor;
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init();
+    
+    info!("Starting Media Processing Service...");
+    
+    // Initialize video processor
+    let video_processor = VideoProcessor::new()
+        .expect("Failed to initialize video processor");
+    
+    let video_processor_data = web::Data::new(video_processor);
+    
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8081".to_string());
+    let bind_address = format!("127.0.0.1:{}", port);
+    
+    info!("Server starting on {}", bind_address);
+    
+    HttpServer::new(move || {
+        App::new()
+            .app_data(video_processor_data.clone())
+            .service(
+                web::scope("/api/v1")
+                    .service(
+                        web::scope("/video")
+                            .route("/transcode", web::post().to(handlers::video::transcode_video))
+                            .route("/extract-audio", web::post().to(handlers::video::extract_audio))
+                            .route("/info", web::post().to(handlers::video::get_video_info))
+                    )
+                    .service(
+                        web::scope("/audio")
+                            .route("/transcode", web::post().to(handlers::video::transcode_audio))
+                            .route("/extract", web::post().to(handlers::video::extract_audio))
+                    )
+                    .service(
+                        web::scope("/metadata")
+                            .route("/extract", web::post().to(handlers::video::get_video_info_from_json))
+                    )
+            )
+            .route("/health", web::get().to(handlers::health::health_check))
+    })
+    .bind(&bind_address)?
+    .run()
+    .await
 } 
