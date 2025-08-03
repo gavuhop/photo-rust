@@ -1,0 +1,101 @@
+repos:
+  # Rust-specific hooks
+  - repo: https://github.com/pre-commit/mirrors-rustfmt
+    rev: v1.6.0
+    hooks:
+      - id: rustfmt
+        args: [--edition, "2021"]
+        types: [rust]
+        require_serial: true
+
+  - repo: https://github.com/pre-commit/mirrors-clippy
+    rev: v1.75.0
+    hooks:
+      - id: clippy
+        args: [--all-targets, --all-features, --, -D, warnings]
+        types: [rust]
+        require_serial: true
+
+  # General code quality hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-json
+      - id: check-toml
+      - id: debug-statements
+      - id: detect-private-key
+      - id: name-tests-test
+      - id: requirements-txt-fixer
+
+  # Security hooks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+
+  # Shell script linting
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.9.0
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: [--ignore, DL3008, --ignore, DL3009]
+
+  # YAML/JSON formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types: [yaml, json]
+        args: [--write]
+
+  # Git hooks
+  - repo: local
+    hooks:
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [rust]
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [rust]
+        stages: [push]
+
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [rust]
+        stages: [push] 
