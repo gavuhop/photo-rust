@@ -89,18 +89,29 @@ impl Logger {
     fn format_log(&self, record: &Record) -> String {
         let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
         
+        // Simplify target name
         let target = if record.target() == "media_processing_service" {
             "main"
+        } else if record.target().contains("::") {
+            record.target().split("::").last().unwrap_or(record.target())
         } else {
             record.target()
         };
         
+        // Simplify module path
+        let module_path = record.module_path().unwrap_or("unknown");
+        let short_module = if module_path.contains("::") {
+            module_path.split("::").skip(1).collect::<Vec<_>>().join("::")
+        } else {
+            module_path.to_string()
+        };
+
         format!(
             "[{}] {} [{}] {} - {}\n",
             timestamp,
             record.level(),
             target,
-            record.module_path().unwrap_or("unknown"),
+            short_module,
             record.args()
         )
     }
@@ -163,7 +174,6 @@ pub mod levels {
     
     pub const DEVELOPMENT: LevelFilter = LevelFilter::Debug;
     pub const PRODUCTION: LevelFilter = LevelFilter::Info;
-    pub const TESTING: LevelFilter = LevelFilter::Warn;
 }
 
 #[cfg(test)]
