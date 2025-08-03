@@ -29,7 +29,7 @@ async fn main() -> std::io::Result<()> {
     
     let video_processor_data = web::Data::new(video_processor);
     
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8081".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8082".to_string());
     let bind_address = format!("127.0.0.1:{}", port);
     
     info!("Server starting on {}", bind_address);
