@@ -44,6 +44,7 @@ async fn main() -> std::io::Result<()> {
                             .route("/transcode", web::post().to(handlers::video::transcode_video))
                             .route("/extract-audio", web::post().to(handlers::video::extract_audio))
                             .route("/info", web::post().to(handlers::video::get_video_info))
+                            .route("/multi-quality-hls", web::post().to(handlers::video::transcode_multi_quality_and_hls))
                     )
                     .service(
                         web::scope("/audio")

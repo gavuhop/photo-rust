@@ -3,6 +3,13 @@ use crate::models::video::{VideoTranscodeRequest, VideoTranscodeResponse, AudioE
 use crate::services::video_processor::VideoProcessor;
 use crate::utils::error::ServiceError;
 use log::{error, info};
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct MultiQualityHlsResponse {
+    pub outputs: Vec<String>,
+    pub master_playlist: String,
+}
 
 pub async fn transcode_video(
     req: web::Json<VideoTranscodeRequest>,
@@ -76,6 +83,38 @@ pub async fn transcode_audio(
             Err(ServiceError::FFmpegError(e.to_string()))
         }
     }
+}
+
+pub async fn transcode_multi_quality_and_hls(
+    req: web::Json<VideoTranscodeRequest>,
+    video_processor: web::Data<VideoProcessor>,
+) -> Result<HttpResponse, ServiceError> {
+    info!("Received multi-quality HLS transcode request");
+    let input_path = &req.input_path;
+    let output_prefix = req.output_path.trim_end_matches(".mp4");
+    let codec = req.codec.as_deref().unwrap_or("libx264");
+    let format = req.format.as_deref().unwrap_or("mp4");
+    let output_dir = std::path::Path::new(output_prefix).parent().unwrap_or_else(|| std::path::Path::new("output")).to_str().unwrap_or("output");
+    let master_playlist = "master.m3u8";
+
+    // 1. Transcode song song nhiều chất lượng
+    let outputs = video_processor.transcode_multi_quality(
+        input_path,
+        output_prefix,
+        codec,
+        format,
+    ).await.map_err(|e| ServiceError::FFmpegError(e.to_string()))?;
+
+    // 2. Đóng gói HLS
+    video_processor.package_hls(&outputs, output_dir, master_playlist)
+        .await.map_err(|e| ServiceError::FFmpegError(e.to_string()))?;
+
+    // 3. Trả về metadata
+    let response = MultiQualityHlsResponse {
+        outputs: outputs.clone(),
+        master_playlist: format!("{}/{}", output_dir, master_playlist),
+    };
+    Ok(HttpResponse::Ok().json(response))
 }
 
 pub async fn get_video_info(

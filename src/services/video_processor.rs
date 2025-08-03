@@ -7,6 +7,18 @@ use std::os::unix::process::ExitStatusExt;
 use uuid::Uuid;
 use crate::models::video::{VideoTranscodeRequest, AudioExtractRequest};
 
+pub struct QualityProfile {
+    pub label: &'static str,
+    pub resolution: &'static str,
+    pub bitrate: &'static str,
+}
+
+pub static QUALITY_PROFILES: &[QualityProfile] = &[
+    QualityProfile { label: "1080p", resolution: "1920x1080", bitrate: "5M" },
+    QualityProfile { label: "720p",  resolution: "1280x720",  bitrate: "2.5M" },
+    QualityProfile { label: "480p",  resolution: "854x480",   bitrate: "1M" },
+];
+
 pub struct VideoProcessor;
 
 impl VideoProcessor {
@@ -492,5 +504,112 @@ impl VideoProcessor {
             error!("[{}] {}", job_id, error_msg);
             Err(anyhow::anyhow!("Audio transcode failed: {}", error_msg))
         }
+    }
+
+    /// Transcode input video to multiple qualities in parallel (for adaptive streaming)
+    pub async fn transcode_multi_quality(
+        &self,
+        input_path: &str,
+        output_prefix: &str,
+        codec: &str,
+        format: &str,
+    ) -> Result<Vec<String>> {
+        use tokio::task;
+        let mut handles = vec![];
+        for profile in QUALITY_PROFILES {
+            let input = input_path.to_string();
+            let output = format!("{output_prefix}_{}.mp4", profile.label);
+            let codec = codec.to_string();
+            let format = format.to_string();
+            let res = profile.resolution.to_string();
+            let bitrate = profile.bitrate.to_string();
+
+            handles.push(task::spawn(async move {
+                let mut cmd = Command::new("ffmpeg");
+                cmd.arg("-y")
+                    .arg("-i").arg(&input)
+                    .arg("-s").arg(&res)
+                    .arg("-b:v").arg(&bitrate)
+                    .arg("-c:v").arg(&codec)
+                    .arg(&output);
+                let status = cmd.status().expect("failed to run ffmpeg");
+                if status.success() {
+                    Ok(output)
+                } else {
+                    Err(format!("Transcode failed for {}", output))
+                }
+            }));
+        }
+        let mut results = vec![];
+        for handle in handles {
+            match handle.await {
+                Ok(Ok(path)) => results.push(path),
+                Ok(Err(e)) => return Err(anyhow::anyhow!(e)),
+                Err(e) => return Err(anyhow::anyhow!("Task join error: {e}")),
+            }
+        }
+        Ok(results)
+    }
+
+    /// Package multiple quality files into HLS segments and master playlist
+    pub async fn package_hls(
+        &self,
+        outputs: &[String],
+        output_dir: &str,
+        master_playlist: &str,
+    ) -> Result<()> {
+        use std::fs::File;
+        use std::io::Write;
+        let mut variant_playlists = vec![];
+        let mut master_content = String::new();
+        master_content.push_str("#EXTM3U\n");
+
+        for output in outputs {
+            // Tạo tên playlist cho từng chất lượng
+            let label = output
+                .split('_')
+                .last()
+                .unwrap_or("unknown").replace(".mp4", "");
+            let playlist = format!("{}/{}.m3u8", output_dir, label);
+            let segment_pattern = format!("{}/{}_segment_%03d.ts", output_dir, label);
+
+            // Đóng gói từng file thành HLS
+            let status = Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-i").arg(output)
+                .arg("-c:v").arg("copy")
+                .arg("-c:a").arg("aac")
+                .arg("-f").arg("hls")
+                .arg("-hls_time").arg("4")
+                .arg("-hls_playlist_type").arg("vod")
+                .arg("-hls_segment_filename").arg(&segment_pattern)
+                .arg(&playlist)
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to package HLS for {}", output));
+            }
+            // Thêm vào master playlist
+            master_content.push_str(&format!(
+                "#EXT-X-STREAM-INF:BANDWIDTH={},RESOLUTION={}\n{}\n",
+                match label.as_str() {
+                    "1080p" => 5000000,
+                    "720p" => 2500000,
+                    "480p" => 1000000,
+                    _ => 500000,
+                },
+                match label.as_str() {
+                    "1080p" => "1920x1080",
+                    "720p" => "1280x720",
+                    "480p" => "854x480",
+                    _ => "640x360",
+                },
+                format!("{}.m3u8", label)
+            ));
+            variant_playlists.push(playlist);
+        }
+        // Ghi master playlist
+        let mut file = File::create(format!("{}/{}", output_dir, master_playlist))?;
+        file.write_all(master_content.as_bytes())?;
+        Ok(())
     }
 } 
