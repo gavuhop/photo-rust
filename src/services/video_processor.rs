@@ -1,7 +1,9 @@
 use anyhow::Result;
 use ffmpeg_next as ffmpeg;
-use log::{error, info};
-use std::process::Command;
+use log::{error, info, warn};
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use std::os::unix::process::ExitStatusExt;
 use uuid::Uuid;
 use crate::models::video::{VideoTranscodeRequest, AudioExtractRequest};
 
@@ -20,10 +22,34 @@ impl VideoProcessor {
         
         info!("Starting video transcode job: {}", job_id);
         
+        // Log current working directory
+        if let Ok(current_dir) = std::env::current_dir() {
+            info!("[{}] Current working directory: {:?}", job_id, current_dir);
+        }
+        
         // Validate input file exists
-        if !std::path::Path::new(&request.input_path).exists() {
+        let input_path = std::path::Path::new(&request.input_path);
+        info!("[{}] Checking input file: {}", job_id, request.input_path);
+        
+        // Try to get absolute path
+        if let Ok(canonical_path) = input_path.canonicalize() {
+            info!("[{}] Input file absolute path: {:?}", job_id, canonical_path);
+        } else {
+            warn!("[{}] Could not resolve absolute path for: {}", job_id, request.input_path);
+        }
+        
+        if !input_path.exists() {
+            error!("[{}] Input file does not exist: {}", job_id, request.input_path);
             return Err(anyhow::anyhow!("Input file not found: {}", request.input_path));
         }
+        
+        // Check if file is readable
+        if let Err(e) = std::fs::File::open(&request.input_path) {
+            error!("[{}] Input file is not readable: {} - Error: {}", job_id, request.input_path, e);
+            return Err(anyhow::anyhow!("Input file is not readable: {} - {}", request.input_path, e));
+        }
+        
+        info!("[{}] Input file validation passed: {}", job_id, request.input_path);
         
         // Validate output directory exists
         if let Some(parent) = std::path::Path::new(&request.output_path).parent() {
@@ -31,6 +57,10 @@ impl VideoProcessor {
                 return Err(anyhow::anyhow!("Output directory does not exist: {}", parent.display()));
             }
         }
+        
+        // Get video duration first
+        let duration = self.get_video_duration(&request.input_path).await?;
+        info!("[{}] Video duration: {:.2} seconds", job_id, duration);
         
         // Build FFmpeg command
         let mut command = Command::new("ffmpeg");
@@ -68,16 +98,121 @@ impl VideoProcessor {
         
         info!("Executing FFmpeg command: {:?}", command);
         
-        // Execute FFmpeg command
-        let output = command.output()?;
+        // Execute FFmpeg command with real-time output monitoring
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
         
-        if output.status.success() {
+        info!("[{}] Spawning FFmpeg process...", job_id);
+        let mut child = command.spawn()?;
+        
+        // Check if process started successfully
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let error = format!("FFmpeg process terminated immediately with status: {}", status);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("FFmpeg processing failed: {}", error));
+            }
+            Ok(None) => {
+                info!("[{}] FFmpeg process started successfully", job_id);
+            }
+            Err(e) => {
+                let error = format!("Failed to check FFmpeg process status: {}", e);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("FFmpeg processing failed: {}", error));
+            }
+        }
+        
+        let stderr = child.stderr.take().unwrap();
+        
+        // Monitor FFmpeg progress in real-time
+        let reader = BufReader::new(stderr);
+        let mut last_progress = 0.0;
+        
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Parse FFmpeg progress output
+                if line.contains("time=") && line.contains("bitrate=") {
+                    // Extract time information for progress tracking
+                    if let Some(time_str) = line.split("time=").nth(1) {
+                        if let Some(time_part) = time_str.split_whitespace().next() {
+                            // Parse time format (HH:MM:SS.ms) and calculate percentage
+                            if let Some(current_time) = self.parse_ffmpeg_time(time_part) {
+                                let progress = (current_time / duration) * 100.0;
+                                if progress > last_progress + 5.0 { // Log every 5% progress
+                                    info!("[{}] Transcode progress: {:.1}% ({:.1}s/{:.1}s)", 
+                                          job_id, progress, current_time, duration);
+                                    last_progress = progress;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Log important FFmpeg messages
+                if line.contains("error") || line.contains("Error") {
+                    warn!("[{}] FFmpeg warning: {}", job_id, line);
+                }
+                
+                // Check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            } else {
+                // Error reading line, check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            }
+        }
+        
+        // Wait for the process to complete
+        let status = child.wait()?;
+        
+        if status.success() {
             info!("Video transcode completed successfully: {}", job_id);
             Ok(job_id)
         } else {
+            let error_msg = if status.code().is_some() {
+                format!("FFmpeg process failed with exit code: {}", status)
+            } else {
+                format!("FFmpeg process terminated by signal: {:?}", status.signal())
+            };
+            error!("[{}] {}", job_id, error_msg);
+            Err(anyhow::anyhow!("FFmpeg processing failed: {}", error_msg))
+        }
+    }
+
+    /// Parse FFmpeg time format (HH:MM:SS.ms) to seconds
+    fn parse_ffmpeg_time(&self, time_str: &str) -> Option<f64> {
+        let parts: Vec<&str> = time_str.split(':').collect();
+        if parts.len() >= 3 {
+            let hours: f64 = parts[0].parse().ok()?;
+            let minutes: f64 = parts[1].parse().ok()?;
+            let seconds: f64 = parts[2].parse().ok()?;
+            
+            let total_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
+            Some(total_seconds)
+        } else {
+            None
+        }
+    }
+
+    /// Get video duration using ffprobe
+    async fn get_video_duration(&self, file_path: &str) -> Result<f64> {
+        let output = Command::new("ffprobe")
+            .arg("-v").arg("quiet")
+            .arg("-show_entries").arg("format=duration")
+            .arg("-of").arg("csv=p=0")
+            .arg(file_path)
+            .output()?;
+            
+        if output.status.success() {
+            let duration_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let duration: f64 = duration_str.parse()
+                .map_err(|_| anyhow::anyhow!("Failed to parse duration: {}", duration_str))?;
+            Ok(duration)
+        } else {
             let error = String::from_utf8_lossy(&output.stderr);
-            error!("FFmpeg error: {}", error);
-            Err(anyhow::anyhow!("FFmpeg processing failed: {}", error))
+            Err(anyhow::anyhow!("Failed to get video duration: {}", error))
         }
     }
 
@@ -97,6 +232,10 @@ impl VideoProcessor {
                 return Err(anyhow::anyhow!("Output directory does not exist: {}", parent.display()));
             }
         }
+        
+        // Get video duration first
+        let duration = self.get_video_duration(&request.input_path).await?;
+        info!("[{}] Video duration: {:.2} seconds", job_id, duration);
         
         let mut command = Command::new("ffmpeg");
         
@@ -120,15 +259,86 @@ impl VideoProcessor {
         
         info!("Executing FFmpeg command for audio extraction: {:?}", command);
         
-        let output = command.output()?;
-            
-        if output.status.success() {
+        // Execute FFmpeg command with real-time output monitoring
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        
+        info!("[{}] Spawning FFmpeg process for audio extraction...", job_id);
+        let mut child = command.spawn()?;
+        
+        // Check if process started successfully
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let error = format!("FFmpeg process terminated immediately with status: {}", status);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("Audio extraction failed: {}", error));
+            }
+            Ok(None) => {
+                info!("[{}] FFmpeg process for audio extraction started successfully", job_id);
+            }
+            Err(e) => {
+                let error = format!("Failed to check FFmpeg process status: {}", e);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("Audio extraction failed: {}", error));
+            }
+        }
+        
+        let stderr = child.stderr.take().unwrap();
+        
+        // Monitor FFmpeg progress in real-time
+        let reader = BufReader::new(stderr);
+        let mut last_progress = 0.0;
+        
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Parse FFmpeg progress output
+                if line.contains("time=") && line.contains("bitrate=") {
+                    // Extract time information for progress tracking
+                    if let Some(time_str) = line.split("time=").nth(1) {
+                        if let Some(time_part) = time_str.split_whitespace().next() {
+                            // Parse time format (HH:MM:SS.ms) and calculate percentage
+                            if let Some(current_time) = self.parse_ffmpeg_time(time_part) {
+                                let progress = (current_time / duration) * 100.0;
+                                if progress > last_progress + 5.0 { // Log every 5% progress
+                                    info!("[{}] Audio extraction progress: {:.1}% ({:.1}s/{:.1}s)", 
+                                          job_id, progress, current_time, duration);
+                                    last_progress = progress;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Log important FFmpeg messages
+                if line.contains("error") || line.contains("Error") {
+                    warn!("[{}] FFmpeg warning during audio extraction: {}", job_id, line);
+                }
+                
+                // Check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            } else {
+                // Error reading line, check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            }
+        }
+        
+        // Wait for the process to complete
+        let status = child.wait()?;
+        
+        if status.success() {
             info!("Audio extraction completed successfully: {}", job_id);
             Ok(job_id)
         } else {
-            let error = String::from_utf8_lossy(&output.stderr);
-            error!("FFmpeg error during audio extraction: {}", error);
-            Err(anyhow::anyhow!("Audio extraction failed: {}", error))
+            let error_msg = if status.code().is_some() {
+                format!("FFmpeg process failed with exit code: {}", status)
+            } else {
+                format!("FFmpeg process terminated by signal: {:?}", status.signal())
+            };
+            error!("[{}] {}", job_id, error_msg);
+            Err(anyhow::anyhow!("Audio extraction failed: {}", error_msg))
         }
     }
 
@@ -182,6 +392,10 @@ impl VideoProcessor {
             }
         }
         
+        // Get audio duration first
+        let duration = self.get_video_duration(input_path).await?;
+        info!("[{}] Audio duration: {:.2} seconds", job_id, duration);
+        
         let mut command = Command::new("ffmpeg");
         
         // Input file
@@ -197,15 +411,86 @@ impl VideoProcessor {
         
         info!("Executing FFmpeg command for audio transcode: {:?}", command);
         
-        let output = command.output()?;
-            
-        if output.status.success() {
+        // Execute FFmpeg command with real-time output monitoring
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        
+        info!("[{}] Spawning FFmpeg process for audio transcode...", job_id);
+        let mut child = command.spawn()?;
+        
+        // Check if process started successfully
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let error = format!("FFmpeg process terminated immediately with status: {}", status);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("Audio transcode failed: {}", error));
+            }
+            Ok(None) => {
+                info!("[{}] FFmpeg process for audio transcode started successfully", job_id);
+            }
+            Err(e) => {
+                let error = format!("Failed to check FFmpeg process status: {}", e);
+                error!("[{}] {}", job_id, error);
+                return Err(anyhow::anyhow!("Audio transcode failed: {}", error));
+            }
+        }
+        
+        let stderr = child.stderr.take().unwrap();
+        
+        // Monitor FFmpeg progress in real-time
+        let reader = BufReader::new(stderr);
+        let mut last_progress = 0.0;
+        
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Parse FFmpeg progress output
+                if line.contains("time=") && line.contains("bitrate=") {
+                    // Extract time information for progress tracking
+                    if let Some(time_str) = line.split("time=").nth(1) {
+                        if let Some(time_part) = time_str.split_whitespace().next() {
+                            // Parse time format (HH:MM:SS.ms) and calculate percentage
+                            if let Some(current_time) = self.parse_ffmpeg_time(time_part) {
+                                let progress = (current_time / duration) * 100.0;
+                                if progress > last_progress + 5.0 { // Log every 5% progress
+                                    info!("[{}] Audio transcode progress: {:.1}% ({:.1}s/{:.1}s)", 
+                                          job_id, progress, current_time, duration);
+                                    last_progress = progress;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Log important FFmpeg messages
+                if line.contains("error") || line.contains("Error") {
+                    warn!("[{}] FFmpeg warning during audio transcode: {}", job_id, line);
+                }
+                
+                // Check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            } else {
+                // Error reading line, check if process is still running
+                if let Ok(Some(_)) = child.try_wait() {
+                    break;
+                }
+            }
+        }
+        
+        // Wait for the process to complete
+        let status = child.wait()?;
+        
+        if status.success() {
             info!("Audio transcode completed successfully: {}", job_id);
             Ok(job_id)
         } else {
-            let error = String::from_utf8_lossy(&output.stderr);
-            error!("FFmpeg error during audio transcode: {}", error);
-            Err(anyhow::anyhow!("Audio transcode failed: {}", error))
+            let error_msg = if status.code().is_some() {
+                format!("FFmpeg process failed with exit code: {}", status)
+            } else {
+                format!("FFmpeg process terminated by signal: {:?}", status.signal())
+            };
+            error!("[{}] {}", job_id, error_msg);
+            Err(anyhow::anyhow!("Audio transcode failed: {}", error_msg))
         }
     }
 } 

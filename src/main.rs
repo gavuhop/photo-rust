@@ -34,7 +34,7 @@ async fn main() -> std::io::Result<()> {
     
     info!("Server starting on {}", bind_address);
     
-    HttpServer::new(move || {
+    HttpServer::new(move || {   
         App::new()
             .app_data(video_processor_data.clone())
             .service(
