@@ -18,6 +18,16 @@ if ! command -v ffmpeg &> /dev/null; then
     echo ""
 fi
 
+# Fix permissions for entire project
+echo "🔧 Fixing project permissions..."
+sudo chown -R $USER:$USER . 2>/dev/null || true
+chmod -R 755 . 2>/dev/null || true
+
+# Create logs directory with proper permissions
+echo "📁 Creating logs directory..."
+mkdir -p logs
+chmod 755 logs
+
 # Run the server
 echo "🔄 Starting server..."
 PORT=$PORT RUST_LOG=$RUST_LOG cargo run

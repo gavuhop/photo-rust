@@ -2,14 +2,24 @@ mod handlers;
 mod services;
 mod models;
 mod utils;
+mod logging;
 
 use actix_web::{web, App, HttpServer};
 use log::info;
 use services::video_processor::VideoProcessor;
+use logging::{init_logger, levels};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init();
+    // Initialize custom logger
+    let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
+    let log_level = if cfg!(debug_assertions) {
+        levels::DEVELOPMENT
+    } else {
+        levels::PRODUCTION
+    };
+    
+    init_logger(&log_dir, log_level)?;
     
     info!("Starting Media Processing Service...");
     
